@@ -1,1 +1,0 @@
-/usr/bin/c++  -arch i386 -I/opt/local/include  -bundle -headerpad_max_install_names  -framework AGL -framework OpenGL -framework Carbon -framework ApplicationServices -L/Users/vaughan/Stage-3/lib -L/opt/local/lib -lstage -lfltk_images -lfltk_png -lfltk_z -lfltk_jpeg -lfltk_gl -lfltk -lpthread -L/opt/local/lib -o wheel.so CMakeFiles/wheel.dir/wheel.cc.o 

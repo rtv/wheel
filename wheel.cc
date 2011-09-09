@@ -33,9 +33,12 @@ public:
   ModelRanger* ranger;
   ModelFiducial* fiducial;
 	
-	stg_radians_t best_bearing;
-	stg_meters_t best_range;
-	stg_radians_t best_heading_error; 
+	radians_t best_bearing;
+	meters_t best_range;
+	radians_t best_heading_error; 	
+	ModelFiducial::Fiducial* bestp;
+
+	double resultant_angle;
 	
 	Robot( ModelPosition* p, ModelRanger* r, ModelFiducial* f) 
 		: position(p), 
@@ -44,14 +47,16 @@ public:
 			best_bearing(0.0),
 			best_range(1.0),
 			best_heading_error(0.0),
+			bestp(NULL),
+			resultant_angle(0.0),
 			vis(this)
 	{
 		assert(position);
 		assert(ranger);
 		assert(fiducial);
 			
-		ranger->AddCallback( Model::CB_UPDATE, (stg_model_callback_t)RangerUpdateCb, this ); 
-		fiducial->AddCallback( Model::CB_UPDATE, (stg_model_callback_t)FiducialUpdateCb, this );
+		ranger->AddCallback( Model::CB_UPDATE, (model_callback_t)RangerUpdateCb, this ); 
+		fiducial->AddCallback( Model::CB_UPDATE, (model_callback_t)FiducialUpdateCb, this );
 		
 		fiducial->AddVisualizer( &vis, true );
 
@@ -71,12 +76,6 @@ public:
 		
 	virtual void Visualize( Model* mod, Camera* cam )
 		{		
-			// 		glPushMatrix();		
-			// 		Gl::pose_inverse_shift( mod->GetGlobalPose() );
-			
-			//Color c = mod->GetColor();
-			//c.a = 0.4;
-			
 			double x = robot->best_range * cos( robot->best_bearing );
 			double y = robot->best_range * sin( robot->best_bearing );		
 
@@ -87,23 +86,27 @@ public:
 			double d = 0.2 * sin( robot->best_bearing + 4.0*M_PI/5.0 );		
 			
 			mod->PushColor( Color(0,0,0,1.0) );
-		//graph.Draw();
-		//mod->PopColor();
 
-			GLfloat eps = 0.1;
-
-		glBegin( GL_LINES );
-		glVertex2f( 0,0 );
-		glVertex2f( x, y );
-		glEnd();
-
-		glBegin( GL_POLYGON );
-		glVertex2f( x+c, y+d );
-		glVertex2f( x+a, y+b );
-		glVertex2f( x, y );
-		glEnd();
-
-		
+			glBegin( GL_LINES );
+			glVertex2f( 0,0 );
+			glVertex2f( x, y );
+			glEnd();
+			
+			
+			glBegin( GL_POLYGON );
+			glVertex2f( x+c, y+d );
+			glVertex2f( x+a, y+b );
+			glVertex2f( x, y );
+			glEnd();
+			
+			
+			mod->PushColor( Color::green );
+			glBegin( GL_LINES );
+			glVertex2f( 0,0 );
+			glVertex2f( cos(robot->resultant_angle), sin(robot->resultant_angle) );
+			glEnd();
+			mod->PopColor();
+					
 		// a sphere over the robot
 	// 	GLUquadric* quadric = gluNewQuadric();		
 // 		gluQuadricDrawStyle( quadric, GLU_FILL );
@@ -148,26 +151,30 @@ int Robot::RangerUpdate()
    // use the front-facing sensors only
    for( unsigned int i=0; i < 8; i++ )
  	 {
-		 dx += sensors[i].range * cos( sensors[i].pose.a );
- 		 dy += sensors[i].range * sin( sensors[i].pose.a );
+		 dx += ( sensors[i].ranges[0]) * cos( sensors[i].pose.a );
+		 dy += ( sensors[i].ranges[0]) * sin( sensors[i].pose.a );
  	 }
 	
-	double resultant_angle = atan2( dy, dx );
+	resultant_angle = atan2( dy, dx );
 	double forward_speed = 0.0;
 	double side_speed = 0.0;	   
 	double turn_speed = EXPAND_WGAIN * resultant_angle;
 	  
   // if the front is clear, drive forwards
-  if( (sensors[3].range > SAFE_DIST) && // forwards
-			(sensors[4].range > SAFE_DIST) &&
-			(sensors[5].range > SAFE_DIST ) && //
-			(sensors[6].range > SAFE_DIST/2.0) && 
-			(sensors[2].range > SAFE_DIST ) && 
-			(sensors[1].range > SAFE_DIST/2.0) && 
-			(fabs( resultant_angle ) < SAFE_ANGLE) )
-		{
-			forward_speed = VSPEED;
+	if( (sensors[3].ranges[0] > SAFE_DIST) && // forwards
+	    (sensors[4].ranges[0] > SAFE_DIST) &&
+	    (sensors[5].ranges[0] > SAFE_DIST ) && //
+	    (sensors[6].ranges[0] > SAFE_DIST/2.0) && 
+	    (sensors[2].ranges[0] > SAFE_DIST ) && 
+	    (sensors[1].ranges[0] > SAFE_DIST/2.0) && 
+	    (fabs( resultant_angle ) < SAFE_ANGLE) )
+	  {
+			if( bestp )
+				forward_speed = VSPEED;
 			
+			//		if( best_range < 4.0 )
+			//forward_speed *= 0.8;
+
 			//forward_speed = 0.2 * (best_range - 2.0);
 			
 
@@ -196,9 +203,8 @@ int Robot::RangerUpdate()
 			if( fabs(turn_speed) < 0.1 )
 				turn_speed = drand48();
 		}
-	
-
   
+
   position->SetSpeed( forward_speed, side_speed, turn_speed );
   
   return 0;
@@ -208,24 +214,26 @@ int Robot::FiducialUpdate()
 { 
 	double best = 1e9; // big - low scores are good
 	
-	ModelFiducial::Fiducial* bestp = NULL;
+	bestp = NULL;
 	
 	FOR_EACH( it, fiducial->GetFiducials() )
 		{
 			ModelFiducial::Fiducial* other = &(*it);
 			
+			// ignore things going the other way
+			if( fabs(other->geom.a) > (1.0 * (M_PI/2.0)) )
+				continue;
+
 			// find the squared error difference from the last favoured fiducial
-			double kdist = 0.5;
-			double kbear = 1.0;
-			double korient = 0.0;
+			double kd = 0.5;
+			double kb = 1.0;
 			
 			double dist_score = other->range - best_range;
 			double bear_score = anglediff( other->bearing, best_bearing );
-			double orient_score = anglediff( M_PI, other->bearing );
+			//double orient_score = anglediff( M_PI, other->bearing );
 			
-			double score = pow( kdist * dist_score + 
-													kbear * bear_score + 
-													korient * orient_score, 2.0 );
+			double score = pow( kd*dist_score + kb*bear_score, 
+													2.0 );
 			
 			if( score < best ) // best score so far seen
 				{

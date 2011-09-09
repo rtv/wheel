@@ -1,1 +1,14 @@
-An experimental swarm robot controller for Stage
+# An experimental swarm robot controller for Stage
+
+
+## Notes
+
+Goal: 
+* create entities that exist only in the dynamic behaviours of multiple robots
+* the robots recharge themselves
+* entities survive much longer than any robot charge cycle
+* entities are autopoetic
+ - they hunt for charged-up robots
+
+
+

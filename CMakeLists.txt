@@ -16,9 +16,9 @@ foreach(f ${STG_LDFLAGS})
 endforeach(f)
 
 
-set_target_properties( wheel PROPERTIES 
-											 COMPILE_FLAGS "${STG_CFLAGS_STR}"
-											 LINK_FLAGS "${STG_LDFLAGS_STR}" 
+set_target_properties( wheel PROPERTIES
+ COMPILE_FLAGS "${STG_CFLAGS_STR}"
+ LINK_FLAGS "${STG_LDFLAGS_STR} -framework opengl" 
 )
 
 
